@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
 
 interface Message {
   id: string;
@@ -126,7 +127,25 @@ export function ChatPanel() {
                     : "bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200"
                 }`}
               >
-                <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
+                {msg.role === "user" ? (
+                  <p className="whitespace-pre-wrap text-sm">{msg.content}</p>
+                ) : (
+                  <div className="prose prose-sm max-w-none dark:prose-invert prose-img:rounded-lg prose-img:my-2">
+                    <ReactMarkdown
+                      components={{
+                        img: ({ node, ...props }) => (
+                          <img
+                            {...props}
+                            className="max-w-full h-auto rounded-lg my-2"
+                            alt={props.alt || ""}
+                          />
+                        ),
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
+                )}
               </div>
             </li>
           ))}
