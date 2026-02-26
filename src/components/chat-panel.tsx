@@ -10,18 +10,38 @@ interface Message {
   timestamp: Date;
 }
 
+const demoUsers = [
+  { id: "demo-user-a", label: "Demo User A" },
+  { id: "demo-user-b", label: "Demo User B" },
+] as const;
+
 export function ChatPanel() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string>(demoUsers[0].id);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    const savedUserId = window.localStorage.getItem("demo-user-id");
+    if (savedUserId && demoUsers.some((user) => user.id === savedUserId)) {
+      setUserId(savedUserId);
+    }
+  }, []);
+
+  function handleUserChange(nextUserId: string) {
+    setUserId(nextUserId);
+    window.localStorage.setItem("demo-user-id", nextUserId);
+    setConversationId(null);
+    setError(null);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,6 +66,7 @@ export function ChatPanel() {
         body: JSON.stringify({
           message: text,
           conversationId: conversationId ?? undefined,
+          userId,
         }),
       });
 
@@ -95,12 +116,31 @@ export function ChatPanel() {
   return (
     <div className="flex h-[calc(100vh-8rem)] flex-col rounded-2xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800 md:h-[600px]">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <h2 className="font-semibold text-slate-900 dark:text-white">
-          PureAir AI 智能顧問
-        </h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          由 Coze 驅動，可解答產品與選型問題
-        </p>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="font-semibold text-slate-900 dark:text-white">
+              PureAir AI 智能顧問
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              由 Coze 驅動，可解答產品與選型問題
+            </p>
+          </div>
+          <label className="text-sm text-slate-600 dark:text-slate-300">
+            Demo User
+            <select
+              value={userId}
+              onChange={(e) => handleUserChange(e.target.value)}
+              className="ml-2 rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              disabled={loading}
+            >
+              {demoUsers.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">

@@ -36,3 +36,8 @@ Thumbs.db
 
 # TypeScript
 *.tsbuildinfo
+
+# Local-only (do not commit)
+COZE_SETUP_PROMPT.md
+COZE_SETUP_PROMPT_SIMPLE.md
+.cursor/rules/Coze-API-Integration-Rules.mdc
