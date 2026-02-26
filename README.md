@@ -89,19 +89,45 @@ curl -X POST "http://localhost:3000/api/demo/place-service-request" \
   }'
 ```
 
+## Coze Chat API 直接調用（Demo 用戶）
+
+調用 Coze API 時需同時傳 `user_id` 與 `custom_variables.userId`，且必須為 `demo-user-a` 或 `demo-user-b` 才能查到對應訂單/售後數據：
+
+```bash
+curl -X POST 'https://api.coze.com/v3/chat' \
+  -H "Authorization: Bearer <YOUR_PERSONAL_ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "bot_id": "<YOUR_BOT_ID>",
+    "user_id": "demo-user-b",
+    "stream": true,
+    "additional_messages": [
+      {
+        "content": "我的 Home 好像不太正常工作，能安排人上門看看嗎？",
+        "content_type": "text",
+        "role": "user",
+        "type": "question"
+      }
+    ],
+    "custom_variables": {
+      "userId": "demo-user-b"
+    }
+  }'
+```
+
 ## Coze Tool 配置建議
 
 在 Coze Agent 新增兩個工具：
 
 - `get_user_orders`
   - method: `GET`
-  - url: `/api/demo/orders?userId={{user_id}}`
+  - url: `/api/demo/orders?userId={{user_id}}` 或 `?userId={{custom_variables.userId}}`
   - headers: `X-API-Key: <AGENT_API_KEY>`
 - `place_service_request`
   - method: `POST`
   - url: `/api/demo/place-service-request`
   - headers: `X-API-Key: <AGENT_API_KEY>`
-  - body: `userId`、`requestType`、`productName`、`model`、`issueDescription`
+  - body: `userId`、`requestType`、`productName`、`model`、`issueDescription`（`userId` 可用 `{{user_id}}` 或 `{{custom_variables.userId}}`）
 
 ## Supabase 初始化（Demo）
 

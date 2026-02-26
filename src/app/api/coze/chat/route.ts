@@ -294,6 +294,7 @@ export async function POST(request: NextRequest) {
     const requestBody: Record<string, any> = {
       bot_id: botIdStr,
       user_id: resolvedUserId,
+      custom_variables: { userId: resolvedUserId },
       additional_messages: [
         {
           role: "user",
