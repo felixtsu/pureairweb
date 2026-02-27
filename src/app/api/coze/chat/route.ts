@@ -9,6 +9,7 @@ function getCozeApiBase(): string {
 export interface CozeChatRequestBody {
   message: string;
   conversationId?: string;
+  userId?: string;
 }
 
 export interface CozeChatResponseBody {
@@ -266,13 +267,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { message, conversationId } = body;
+  const { message, conversationId, userId } = body;
   if (!message || typeof message !== "string") {
     return NextResponse.json(
       { error: "請提供 message 字串" },
       { status: 400 }
     );
   }
+
+  const resolvedUserId = typeof userId === "string" && userId.trim()
+    ? userId.trim()
+    : "demo-user-a";
 
   try {
     const base = getCozeApiBase();
@@ -288,7 +293,8 @@ export async function POST(request: NextRequest) {
     // 使用 streaming 模式（SSE）
     const requestBody: Record<string, any> = {
       bot_id: botIdStr,
-      user_id: "pureair-web-user",
+      user_id: resolvedUserId,
+      custom_variables: { userId: resolvedUserId },
       additional_messages: [
         {
           role: "user",
