@@ -13,6 +13,7 @@ interface Message {
 const demoUsers = [
   { id: "demo-user-a", label: "Demo User A" },
   { id: "demo-user-b", label: "Demo User B" },
+  { id: "demo-user-c", label: "Demo User C" },
 ] as const;
 
 export function ChatPanel() {
