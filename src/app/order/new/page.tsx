@@ -1,13 +1,9 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { products } from "@/data/products";
-
-interface MeData {
-  phone: string | null;
-}
 
 interface OrderData {
   id: string;
@@ -22,25 +18,12 @@ function NewOrderForm() {
   const searchParams = useSearchParams();
   const productId = searchParams.get("product") || "";
 
-  const [phone, setPhone] = useState<string | null>(null);
   const [selectedProductId, setSelectedProductId] = useState(productId);
   const [address, setAddress] = useState("");
   const [remark, setRemark] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successOrder, setSuccessOrder] = useState<OrderData | null>(null);
-
-  useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((data: MeData) => {
-        if (!data.phone) {
-          router.push("/login?redirect=/order/new" + (productId ? `?product=${productId}` : ""));
-        } else {
-          setPhone(data.phone);
-        }
-      });
-  }, [router, productId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -115,14 +98,6 @@ function NewOrderForm() {
     );
   }
 
-  if (phone === null) {
-    return (
-      <div className="mx-auto max-w-md px-4 py-16 text-center">
-        <p className="text-slate-500">載入中...</p>
-      </div>
-    );
-  }
-
   return (
     <div className="mx-auto max-w-xl px-4 py-12">
       <h1 className="mb-8 text-2xl font-bold text-slate-900 dark:text-white">
@@ -131,18 +106,6 @@ function NewOrderForm() {
 
       <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-700 dark:bg-slate-800">
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-              登入手機號碼
-            </label>
-            <input
-              type="tel"
-              value={phone}
-              readOnly
-              className="mt-1 block w-full cursor-not-allowed rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-slate-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-400"
-            />
-          </div>
-
           <div>
             <label
               htmlFor="product"

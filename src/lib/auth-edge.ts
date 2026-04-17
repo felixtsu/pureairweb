@@ -2,7 +2,9 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export function createEdgeSupabaseClient(request: NextRequest) {
-  return createServerClient(
+  let setAllResponse: NextResponse | undefined;
+
+  const client = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -15,8 +17,11 @@ export function createEdgeSupabaseClient(request: NextRequest) {
           cookiesToSet.forEach(({ name, value, options }) => {
             response.cookies.set(name, value, options);
           });
+          setAllResponse = response;
         },
       },
     }
   );
+
+  return { client, setAllResponse: () => setAllResponse };
 }

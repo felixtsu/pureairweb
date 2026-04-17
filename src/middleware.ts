@@ -9,7 +9,7 @@ export async function middleware(request: NextRequest) {
   const isProtected = PROTECTED_PATHS.some((p) => pathname.startsWith(p));
   if (!isProtected) return NextResponse.next();
 
-  const supabase = createEdgeSupabaseClient(request);
+  const { client: supabase, setAllResponse } = createEdgeSupabaseClient(request);
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
@@ -18,7 +18,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl);
   }
 
-  return NextResponse.next();
+  // Return the response with any Supabase cookie updates
+  return setAllResponse() ?? NextResponse.next();
 }
 
 export const config = {
