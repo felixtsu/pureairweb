@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getProductById } from "@/data/products";
+import { ProductOrderButton } from "@/components/product-order-button";
 
 interface ProductPageProps {
   params: Promise<{ id: string }>;
@@ -81,15 +82,16 @@ export default async function ProductPage({ params }: ProductPageProps) {
         </dl>
 
         <footer className="mt-10 flex flex-wrap gap-4">
+          <ProductOrderButton productId={id} />
           <Link
             href="/chat"
-            className="rounded-lg bg-sky-600 px-5 py-2.5 font-medium text-white hover:bg-sky-700"
+            className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
           >
             與 AI 顧問諮詢此型號
           </Link>
           <Link
             href="/"
-            className="rounded-lg border border-slate-300 px-5 py-2.5 font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+            className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
           >
             查看其他型號
           </Link>
