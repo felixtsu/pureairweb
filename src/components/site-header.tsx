@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 
 interface MeData {
   user: { id: string; email: string } | null;
@@ -12,12 +12,13 @@ export function SiteHeader() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((data: MeData) => setUserEmail(data.user?.email ?? null));
-  }, []);
+  }, [pathname]);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });

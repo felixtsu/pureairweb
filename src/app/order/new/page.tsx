@@ -19,8 +19,6 @@ function NewOrderForm() {
   const productId = searchParams.get("product") || "";
 
   const [selectedProductId, setSelectedProductId] = useState(productId);
-  const [address, setAddress] = useState("");
-  const [remark, setRemark] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successOrder, setSuccessOrder] = useState<OrderData | null>(null);
@@ -129,39 +127,6 @@ function NewOrderForm() {
             </select>
           </div>
 
-          <div>
-            <label
-              htmlFor="address"
-              className="block text-sm font-medium text-slate-700 dark:text-slate-300"
-            >
-              安裝地址（選填）
-            </label>
-            <input
-              id="address"
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="香港中環皇后大道中 99 號"
-              className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder-slate-400 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:placeholder-slate-400"
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="remark"
-              className="block text-sm font-medium text-slate-700 dark:text-slate-300"
-            >
-              備註（選填）
-            </label>
-            <textarea
-              id="remark"
-              rows={3}
-              value={remark}
-              onChange={(e) => setRemark(e.target.value)}
-              placeholder="其他需求或備註..."
-              className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder-slate-400 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white dark:placeholder-slate-400"
-            />
-          </div>
 
           {error && (
             <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
