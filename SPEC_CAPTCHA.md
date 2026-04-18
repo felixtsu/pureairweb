@@ -17,11 +17,18 @@
 
 **接入方式**：通过 npm 安装，无外部 API 依赖，完全自托管。
 
+### 后端校验（实现说明）
+
+- **数学**：题目与正确答案由 `POST /api/captcha/math/issue` 生成；答案封装在短期 HMAC 签名 token 中（`CAPTCHA_HMAC_SECRET`）。客户端仅展示 `question`，提交时 `POST /api/captcha/verify`（`captchaType: math`）由服务端校验签名与答案。绕过需伪造签名或窃取 secret。
+- **滑块**：使用 `slider-captcha-js` 的 `request` + `onVerify` 模式；`GET /api/captcha/slider/challenge` 返回背景/拼图图片 URL，`onVerify` 将轨迹等数据 `POST /api/captcha/verify`（`captchaType: slider`）。**库在浏览器内随机生成缺口位置，服务端无法获知与拼图像素级一致的「标准答案」**，当前服务端仅做时长、轨迹长度、`x` 粗范围等启发式校验，强度低于数学验证码；自动化仍可能构造合法 POST。若需与数学同等强度的滑块，需换用「服务端生成缺口坐标 + 会话存储」的方案或自研组件。
+
 ---
 
 ## 3. 环境变量
 
 ```env
+# 数学验证码 HMAC 密钥（生产必填，≥16 字符）
+CAPTCHA_HMAC_SECRET=your-random-secret-at-least-16-chars
 # Captcha 系统总开关（Admin 保护）
 CAPTCHA_ADMIN_TOKEN=your-admin-token
 NEXT_PUBLIC_CAPTCHA_ENABLED=true
@@ -103,6 +110,8 @@ POST /api/admin/captcha?token=xxx
 
 ```
 src/
+  lib/
+    captcha-challenge.ts   # 数学 HMAC token；滑块启发式校验
   components/
     captcha/
       math-captcha.tsx      # 数学验证码组件（随机加减乘除）
@@ -120,7 +129,9 @@ src/
         page.tsx             # Demo 演示开关
     api/
       captcha/
-        verify/route.ts      # 统一验证 API
+        math/issue/route.ts       # 数学题签发（question + token）
+        slider/challenge/route.ts # 滑块图片 challenge（picsum）
+        verify/route.ts           # 统一验证 API（math / slider）
       admin/
         captcha/route.ts     # Admin 配置 API
 ```
