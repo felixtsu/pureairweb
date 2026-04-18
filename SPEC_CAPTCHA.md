@@ -13,7 +13,7 @@
 | 类型 | 服务 | 说明 |
 |------|------|------|
 | 滑块拼图 | **slider-captcha-js** | https://www.npmjs.com/package/slider-captcha-js 开源免费，支持 React/TS |
-| 数学验证 | **react-numeric-captcha** | 随机数学加减乘除题，简单可靠 |
+| 数学验证 | **自研 `MathCaptcha`** | 随机数学加减乘题（无额外 npm 依赖，兼容 React 18） |
 
 **接入方式**：通过 npm 安装，无外部 API 依赖，完全自托管。
 
@@ -129,7 +129,7 @@ src/
 
 ## 8. 实现顺序
 
-1. **安装依赖**：`npm install slider-captcha-js react-numeric-captcha`
+1. **安装依赖**：`npm install slider-captcha-js`
 2. **环境变量**：更新 `.env.example`
 3. **验证码组件**：
    - `src/components/captcha/math-captcha.tsx`（数学验证）
