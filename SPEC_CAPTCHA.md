@@ -25,7 +25,7 @@
 ### 后端校验（实现说明）
 
 - **数学**：题目与正确答案由 `POST /api/captcha/math/issue` 生成；答案封装在短期 HMAC 签名 token 中（`CAPTCHA_HMAC_SECRET`）。客户端仅展示 `question`，提交时 `POST /api/captcha/verify`（`captchaType: math`）由服务端校验签名与答案。绕过需伪造签名或窃取 secret。
-- **滑块**：**不传 `request`**，由 `slider-captcha-js` 在浏览器用单张底图 + Canvas 挖空缺口（与滑块拼图一致）。**仅传 `onVerify`**：用户松手后把 `duration` / `trail` / `x` 等 `POST /api/captcha/verify`（`captchaType: slider`）做启发式校验。**不要**同时传 `request` + `onVerify` 且用两张无关 URL，否则库会走「双图」模式，底图不会挖空。**库在浏览器内随机生成缺口位置，服务端无法获知与拼图像素级一致的「标准答案」**，启发式强度低于数学验证码。若需与数学同等强度的滑块，需换用「服务端生成缺口坐标 + 会话存储」或自研组件。
+- **滑块**：**不传 `request` / `onVerify`**，由 `slider-captcha-js` 在浏览器用单张底图 + Canvas 挖空，并用内置容差比对滑条位移与 `targetX`；**只有对齐才 `onSuccess`**。若只传 `onVerify` 而不传 `request`，该库会跳过本地位置校验、仅依赖 `onVerify` 是否抛错，易与宽松后端组合成「滑错也过」——因此当前实现不做滑块 `POST /api/captcha/verify`。若需服务端强校验缺口坐标，需自研或换支持「服务端存 targetX + 校验」的方案。
 
 ---
 

@@ -1,8 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback } from "react";
-import { BASE_PATH } from "@/lib/base-path";
 
 // @ts-ignore - slider-captcha-js/react has no type declarations
 const SliderCaptchaComponent = dynamic(() => import("slider-captcha-js/react"), {
@@ -23,9 +21,11 @@ interface SliderCaptchaProps {
 }
 
 /**
- * 不傳 `request`：庫在瀏覽器用單張底圖 + Canvas 挖空拼圖缺口（正確視覺）。
- * 僅傳 `onVerify`：滑完後把軌跡等 POST 後端做啟發式校驗（見 SPEC_CAPTCHA.md）。
- * 若同時傳 `request` + `onVerify`，庫會改為兩張 URL 圖片模式，不會再挖空底圖。
+ * 不傳 `request` / `onVerify`：庫在瀏覽器用底圖 + Canvas 挖空，並用 `dx` 與 `targetX`
+ * 做本地容差比對；只有對齊才會觸發 `onSuccess`。
+ *
+ * 注意：若只傳 `onVerify` 而不傳 `request`，該庫會在 `onVerify` resolve 後直接視為通過，
+ * **不再**做本地位置校驗，導致滑錯也能過（若後端啟發式又過寬）。
  */
 export function SliderCaptcha({
   onVerified,
@@ -34,26 +34,6 @@ export function SliderCaptcha({
   height = 200,
   theme = "light",
 }: SliderCaptchaProps) {
-  const onVerify = useCallback(
-    async (data: {
-      duration: number;
-      trail: [number, number][];
-      targetType: string;
-      x: number;
-    }) => {
-      const res = await fetch(`${BASE_PATH}/api/captcha/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ captchaType: "slider", ...data }),
-      });
-      const json = (await res.json()) as { success?: boolean; error?: string };
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || "verify_failed");
-      }
-    },
-    [],
-  );
-
   return (
     <div className="w-full max-w-sm">
       <SliderCaptchaComponent
@@ -62,7 +42,6 @@ export function SliderCaptcha({
         width={width}
         height={height}
         theme={theme}
-        onVerify={onVerify}
         onSuccess={onVerified}
         onFail={onError}
       />
