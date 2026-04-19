@@ -54,5 +54,16 @@ export function svgToDataUrl(svg: string): string {
 /**
  * tolerance：服务端允许的 |x - snapDx| 最大偏差（像素），非「必须完全相等」。
  * 库内拇指非 44px、亚像素取整等会带来几 px 误差，默认略放宽；与库 canvas 模式默认 6 接近但略大。
+ *
+ * slotLeftMin：缺口左缘随机下界。过小则 snapDx（≈ slotLeft−8）接近 0，用户几乎不用拖滑条。
  */
-export const SLIDER_STAGE = { w: STAGE_W, h: STAGE_H, piece: PIECE, thumb: 44, tolerance: 12 } as const;
+export const SLIDER_STAGE = {
+  w: STAGE_W,
+  h: STAGE_H,
+  piece: PIECE,
+  thumb: 44,
+  tolerance: 12,
+  edgeMargin: 8,
+  /** 缺口左缘 ≥ 此值；snapDx 至少约 (slotLeftMin − 8)px，保证需明显右移 */
+  slotLeftMin: 72,
+} as const;

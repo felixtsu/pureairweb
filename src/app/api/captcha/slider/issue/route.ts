@@ -14,13 +14,12 @@ export const dynamic = "force-dynamic";
  */
 export async function POST() {
   try {
-    const margin = 8;
-    const slotLeft =
-      margin +
-      Math.floor(Math.random() * (SLIDER_STAGE.w - SLIDER_STAGE.piece - 2 * margin));
+    const m = SLIDER_STAGE.edgeMargin;
+    const slotLeftMax = SLIDER_STAGE.w - SLIDER_STAGE.piece - m;
+    const span = slotLeftMax - SLIDER_STAGE.slotLeftMin + 1;
+    const slotLeft = SLIDER_STAGE.slotLeftMin + Math.floor(Math.random() * span);
     const slotTop =
-      margin +
-      Math.floor(Math.random() * (SLIDER_STAGE.h - SLIDER_STAGE.piece - 2 * margin));
+      m + Math.floor(Math.random() * (SLIDER_STAGE.h - SLIDER_STAGE.piece - 2 * m));
     const snapDx = computeSnapDx(slotLeft);
     const { bgSvg, pieceSvg } = buildServerSliderSvgs(slotLeft, slotTop);
     const token = createSliderChallengeToken(snapDx);
