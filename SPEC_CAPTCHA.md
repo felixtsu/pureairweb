@@ -20,7 +20,7 @@
 ### 后端校验（实现说明）
 
 - **数学**：题目与正确答案由 `POST /api/captcha/math/issue` 生成；答案封装在短期 HMAC 签名 token 中（`CAPTCHA_HMAC_SECRET`）。客户端仅展示 `question`，提交时 `POST /api/captcha/verify`（`captchaType: math`）由服务端校验签名与答案。绕过需伪造签名或窃取 secret。
-- **滑块**：使用 `slider-captcha-js` 的 `request` + `onVerify` 模式；`GET /api/captcha/slider/challenge` 返回背景/拼图图片 URL，`onVerify` 将轨迹等数据 `POST /api/captcha/verify`（`captchaType: slider`）。**库在浏览器内随机生成缺口位置，服务端无法获知与拼图像素级一致的「标准答案」**，当前服务端仅做时长、轨迹长度、`x` 粗范围等启发式校验，强度低于数学验证码；自动化仍可能构造合法 POST。若需与数学同等强度的滑块，需换用「服务端生成缺口坐标 + 会话存储」的方案或自研组件。
+- **滑块**：**不传 `request`**，由 `slider-captcha-js` 在浏览器用单张底图 + Canvas 挖空缺口（与滑块拼图一致）。**仅传 `onVerify`**：用户松手后把 `duration` / `trail` / `x` 等 `POST /api/captcha/verify`（`captchaType: slider`）做启发式校验。**不要**同时传 `request` + `onVerify` 且用两张无关 URL，否则库会走「双图」模式，底图不会挖空。**库在浏览器内随机生成缺口位置，服务端无法获知与拼图像素级一致的「标准答案」**，启发式强度低于数学验证码。若需与数学同等强度的滑块，需换用「服务端生成缺口坐标 + 会话存储」或自研组件。
 
 ---
 
@@ -130,7 +130,6 @@ src/
     api/
       captcha/
         math/issue/route.ts       # 数学题签发（question + token）
-        slider/challenge/route.ts # 滑块图片 challenge（picsum）
         verify/route.ts           # 统一验证 API（math / slider）
       admin/
         captcha/route.ts     # Admin 配置 API

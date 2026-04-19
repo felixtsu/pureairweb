@@ -22,6 +22,11 @@ interface SliderCaptchaProps {
   theme?: "light" | "dark";
 }
 
+/**
+ * 不傳 `request`：庫在瀏覽器用單張底圖 + Canvas 挖空拼圖缺口（正確視覺）。
+ * 僅傳 `onVerify`：滑完後把軌跡等 POST 後端做啟發式校驗（見 SPEC_CAPTCHA.md）。
+ * 若同時傳 `request` + `onVerify`，庫會改為兩張 URL 圖片模式，不會再挖空底圖。
+ */
 export function SliderCaptcha({
   onVerified,
   onError,
@@ -29,16 +34,6 @@ export function SliderCaptcha({
   height = 200,
   theme = "light",
 }: SliderCaptchaProps) {
-  const request = useCallback(async () => {
-    const res = await fetch(
-      `${BASE_PATH}/api/captcha/slider/challenge?w=${encodeURIComponent(String(width))}&h=${encodeURIComponent(String(height))}`,
-    );
-    if (!res.ok) {
-      throw new Error(`challenge_failed_${res.status}`);
-    }
-    return (await res.json()) as { bgUrl: string; puzzleUrl: string };
-  }, [width, height]);
-
   const onVerify = useCallback(
     async (data: {
       duration: number;
@@ -67,7 +62,6 @@ export function SliderCaptcha({
         width={width}
         height={height}
         theme={theme}
-        request={request}
         onVerify={onVerify}
         onSuccess={onVerified}
         onFail={onError}
