@@ -31,26 +31,20 @@ interface SliderCaptchaProps {
   theme?: "light" | "dark";
 }
 
-function polygonToClipPath(points: number[]): string {
-  const pairs: string[] = [];
-  for (let i = 0; i < points.length; i += 2) {
-    pairs.push(`${points[i]!}px ${points[i + 1]!}px`);
-  }
-  return `polygon(${pairs.join(", ")})`;
-}
-
 export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCaptchaProps) {
   const [loading, setLoading] = useState(true);
   const [bgImage, setBgImage] = useState("");
   const [sliderImage, setSliderImage] = useState("");
-  const [token, setToken] = useState("");
   const [sliderX, setSliderX] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
   const [challenge, setChallenge] = useState<SliderApiData | null>(null);
+  const [layoutScale, setLayoutScale] = useState(1);
 
+  const viewportRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const layoutScaleRef = useRef(1);
   const grabOffsetRef = useRef(0);
   const trailStartRef = useRef<number | null>(null);
   const draggingRef = useRef(false);
@@ -59,13 +53,17 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
   const challengeRef = useRef<SliderApiData | null>(null);
   const tokenRef = useRef("");
 
+  useEffect(() => {
+    layoutScaleRef.current = layoutScale;
+  }, [layoutScale]);
+
   const loadChallenge = useCallback(
     async (opts?: { clearError?: boolean }) => {
       if (opts?.clearError !== false) setError(null);
       setVerified(false);
       setSliderX(0);
       sliderXRef.current = 0;
-      setTrailRefEmpty();
+      trailRef.current = [];
       trailStartRef.current = null;
       setLoading(true);
       try {
@@ -78,7 +76,6 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
         challengeRef.current = json.data;
         setBgImage(json.data.bgImage);
         setSliderImage(json.data.sliderImage);
-        setToken(json.data.token);
         tokenRef.current = json.data.token;
       } catch (e) {
         const msg = e instanceof Error ? e.message : "載入失敗";
@@ -91,10 +88,6 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
     [onError],
   );
 
-  function setTrailRefEmpty() {
-    trailRef.current = [];
-  }
-
   useEffect(() => {
     void loadChallenge();
   }, [loadChallenge]);
@@ -105,9 +98,25 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
   const sliderW = challenge?.sliderWidth ?? 1;
   const sliderH = challenge?.sliderHeight ?? 1;
   const fixedY = matchHole?.y ?? 0;
-  const clipPath = matchHole ? polygonToClipPath(matchHole.polygonPoints) : "none";
-
   const maxSliderX = Math.max(0, bgW - sliderW);
+
+  /** 根据视口宽度缩放舞台（逻辑坐标仍为 bgW×bgH） */
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el || !challenge) return;
+    const measure = () => {
+      const w = el.clientWidth;
+      if (w <= 0) return;
+      const s = Math.min(1, w / bgW);
+      const next = Math.max(0.01, s);
+      layoutScaleRef.current = next;
+      setLayoutScale(next);
+    };
+    measure();
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [bgW, challenge]);
 
   const appendTrailPoint = useCallback(
     (xLeft: number) => {
@@ -167,18 +176,26 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
     }
   }, [loadChallenge, onError, onVerified]);
 
+  const clientXToLogicalX = useCallback((clientX: number): number | null => {
+    if (!containerRef.current) return null;
+    const rect = containerRef.current.getBoundingClientRect();
+    const scale = layoutScaleRef.current || 1;
+    return (clientX - rect.left) / scale;
+  }, []);
+
   const onPointerMove = useCallback(
     (clientX: number) => {
-      if (!draggingRef.current || !containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      let next = clientX - rect.left - grabOffsetRef.current;
+      if (!draggingRef.current) return;
+      const localX = clientXToLogicalX(clientX);
+      if (localX === null) return;
+      let next = localX - grabOffsetRef.current;
       if (next < 0) next = 0;
       if (next > maxSliderX) next = maxSliderX;
       sliderXRef.current = next;
       setSliderX(next);
       appendTrailPoint(next);
     },
-    [appendTrailPoint, maxSliderX],
+    [appendTrailPoint, clientXToLogicalX, maxSliderX],
   );
 
   useEffect(() => {
@@ -217,8 +234,9 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
 
   const startDrag = (clientX: number) => {
     if (!containerRef.current || verified || loading) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    grabOffsetRef.current = clientX - rect.left - sliderXRef.current;
+    const localX = clientXToLogicalX(clientX);
+    if (localX === null) return;
+    grabOffsetRef.current = localX - sliderXRef.current;
     draggingRef.current = true;
     setDragging(true);
     trailStartRef.current = null;
@@ -251,41 +269,60 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
     );
   }
 
-  return (
-    <div className="w-full max-w-lg space-y-2">
-      <div
-        ref={containerRef}
-        className={`relative overflow-hidden rounded-xl border shadow-sm ring-1 ${borderClass}`}
-        style={{ width: bgW, height: bgH }}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={bgImage} alt="" className="pointer-events-none block h-full w-full select-none object-cover" draggable={false} />
+  const outerW = bgW * layoutScale;
+  const outerH = bgH * layoutScale;
 
-        {matchHole && (
+  return (
+    <div className="w-full max-w-full space-y-2">
+      <div ref={viewportRef} className="w-full max-w-full">
+        <div
+          ref={containerRef}
+          className={`relative mx-auto overflow-hidden rounded-xl border shadow-sm ring-1 ${borderClass}`}
+          style={{ width: outerW, height: outerH }}
+        >
           <div
-            className="absolute touch-none select-none"
+            className="absolute left-0 top-0 overflow-hidden"
             style={{
-              left: sliderX,
-              top: fixedY,
-              width: sliderW,
-              height: sliderH,
-              clipPath,
-              cursor: verified ? "default" : dragging ? "grabbing" : "grab",
-              backgroundImage: `url(${sliderImage})`,
-              backgroundSize: `${sliderW}px ${sliderH}px`,
-              backgroundRepeat: "no-repeat",
-              backgroundPosition: "0 0",
+              width: bgW,
+              height: bgH,
+              transform: `scale(${layoutScale})`,
+              transformOrigin: "top left",
             }}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              startDrag(e.clientX);
-            }}
-            onTouchStart={(e) => {
-              if (e.touches.length > 0) startDrag(e.touches[0]!.clientX);
-            }}
-            role="presentation"
-          />
-        )}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={bgImage}
+              alt=""
+              className="pointer-events-none block h-full w-full select-none object-cover"
+              draggable={false}
+            />
+
+            {matchHole && sliderImage ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={sliderImage}
+                alt=""
+                draggable={false}
+                className="absolute touch-none select-none"
+                style={{
+                  left: sliderX,
+                  top: fixedY,
+                  width: sliderW,
+                  height: sliderH,
+                  touchAction: "none",
+                  cursor: verified ? "default" : dragging ? "grabbing" : "grab",
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  startDrag(e.clientX);
+                }}
+                onTouchStart={(e) => {
+                  if (e.touches.length > 0) startDrag(e.touches[0]!.clientX);
+                }}
+              />
+            ) : null}
+          </div>
+        </div>
       </div>
 
       {error && challenge && (
