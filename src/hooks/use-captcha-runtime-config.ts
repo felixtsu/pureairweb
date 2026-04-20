@@ -42,6 +42,7 @@ export function useCaptchaRuntimeConfig() {
         randomTriggerRate: Math.min(1, Math.max(0, rate)),
         cooldownMinutes: Math.min(120, Math.max(1, Math.round(cooldown))),
         mode,
+        captchaCooldownActive: raw.captchaCooldownActive === true,
       };
       setConfig(normalized);
     } catch {

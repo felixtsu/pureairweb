@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { parseAndVerifyActionPass } from "@/lib/captcha-action-proof";
+import { readCaptchaRuntimeConfig } from "@/lib/captcha-runtime-store";
 import { createServerSupabaseClient } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -47,10 +49,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { productName, model } = await request.json();
+    const body = (await request.json()) as {
+      productName?: unknown;
+      model?: unknown;
+      productId?: unknown;
+      captchaActionPass?: unknown;
+    };
+    const productName = typeof body.productName === "string" ? body.productName : "";
+    const model = typeof body.model === "string" ? body.model : "";
+    const productId = typeof body.productId === "string" ? body.productId.trim() : "";
+    const captchaActionPass = typeof body.captchaActionPass === "string" ? body.captchaActionPass.trim() : "";
 
     if (!productName || !model) {
       return NextResponse.json({ error: "productName and model are required" }, { status: 400 });
+    }
+    if (!productId) {
+      return NextResponse.json({ error: "productId is required" }, { status: 400 });
+    }
+
+    const cfg = await readCaptchaRuntimeConfig();
+    if (cfg.enabled && cfg.order_captcha) {
+      if (!captchaActionPass) {
+        return NextResponse.json({ error: "Captcha verification required" }, { status: 400 });
+      }
+      const v = parseAndVerifyActionPass(captchaActionPass, { act: "order", ctx: productId });
+      if (!v.ok) {
+        return NextResponse.json({ error: "Invalid or expired captcha proof" }, { status: 400 });
+      }
     }
 
     const purchaseDate = new Date();

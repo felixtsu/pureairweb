@@ -4,11 +4,13 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { BASE_PATH } from "@/lib/base-path";
 
 interface MathCaptchaProps {
-  onVerified: () => void;
+  onVerified: (actionPassToken?: string) => void;
+  /** When set, successful verify returns a signed pass token for login/order APIs. */
+  pendingGateToken?: string | null;
   maxAttempts?: number;
 }
 
-export function MathCaptcha({ onVerified, maxAttempts = 5 }: MathCaptchaProps) {
+export function MathCaptcha({ onVerified, pendingGateToken, maxAttempts = 5 }: MathCaptchaProps) {
   const [question, setQuestion] = useState("");
   const [token, setToken] = useState<string | null>(null);
   const [issueLoading, setIssueLoading] = useState(true);
@@ -78,11 +80,20 @@ export function MathCaptcha({ onVerified, maxAttempts = 5 }: MathCaptchaProps) {
           captchaType: "math",
           token,
           answer: Number.parseInt(input, 10),
+          ...(pendingGateToken ? { pendingGateToken } : {}),
         }),
       });
-      const data = (await res.json()) as { success?: boolean; error?: string };
+      const data = (await res.json()) as { success?: boolean; error?: string; actionPassToken?: string };
 
       if (res.ok && data.success) {
+        if (pendingGateToken) {
+          if (typeof data.actionPassToken !== "string" || !data.actionPassToken.trim()) {
+            setIssueError("驗證通過但缺少通行憑證，請重試");
+            return;
+          }
+          onVerified(data.actionPassToken);
+          return;
+        }
         onVerified();
         return;
       }

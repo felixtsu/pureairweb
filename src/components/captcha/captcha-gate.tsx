@@ -7,7 +7,8 @@ const STORAGE_KEY = "captcha_passed";
 interface CaptchaGateProps {
   children: (props: {
     showCaptcha: boolean;
-    onVerified: () => void;
+    /** For product gate only; login/order use signed passes from `/api/captcha/verify`. */
+    onVerified: (actionPassToken?: string) => void;
   }) => React.ReactNode;
   enabled?: boolean;
   probability?: number;
@@ -53,7 +54,7 @@ export function CaptchaGate({
     }
   }, [enabled, probability, cooldownMinutes]);
 
-  const handleVerified = useCallback(() => {
+  const handleVerified = useCallback((_actionPassToken?: string) => {
     markPassed();
     setShowCaptcha(false);
     onVerified?.();

@@ -26,12 +26,14 @@ interface SliderApiData {
 }
 
 interface SliderCaptchaProps {
-  onVerified: () => void;
+  onVerified: (actionPassToken?: string) => void;
+  /** When set, successful verify returns a signed pass token for login/order APIs. */
+  pendingGateToken?: string | null;
   onError?: (error: unknown) => void;
   theme?: "light" | "dark";
 }
 
-export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCaptchaProps) {
+export function SliderCaptcha({ onVerified, pendingGateToken, onError, theme = "light" }: SliderCaptchaProps) {
   const [loading, setLoading] = useState(true);
   const [bgImage, setBgImage] = useState("");
   const [sliderImage, setSliderImage] = useState("");
@@ -135,11 +137,25 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
           userX,
           userY,
           trail: sendTrail,
+          ...(pendingGateToken ? { pendingGateToken } : {}),
         }),
       });
-      const result = (await res.json()) as { success?: boolean; message?: string; reason?: string };
+      const result = (await res.json()) as {
+        success?: boolean;
+        message?: string;
+        reason?: string;
+        actionPassToken?: string;
+      };
       if (!res.ok || !result.success) {
         throw new Error(result.message || "驗證失敗");
+      }
+      if (pendingGateToken) {
+        if (typeof result.actionPassToken !== "string" || !result.actionPassToken.trim()) {
+          throw new Error("驗證通過但缺少通行憑證");
+        }
+        setVerified(true);
+        onVerified(result.actionPassToken);
+        return;
       }
       setVerified(true);
       onVerified();
@@ -150,7 +166,7 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
       await loadChallenge({ clearError: false });
       setError(msg);
     }
-  }, [loadChallenge, onError, onVerified]);
+  }, [loadChallenge, onError, onVerified, pendingGateToken]);
 
   /** 将屏幕 X 转为背景逻辑坐标（0…bgW） */
   const clientXToLogicalX = useCallback((clientX: number): number | null => {

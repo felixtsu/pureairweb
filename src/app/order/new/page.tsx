@@ -32,7 +32,7 @@ function NewOrderForm() {
   const searchParams = useSearchParams();
   const productId = searchParams?.get("product") ?? "";
 
-  const { config, loading: configLoading } = useCaptchaRuntimeConfig();
+  const { config, loading: configLoading, refetch } = useCaptchaRuntimeConfig();
 
   const [selectedProductId, setSelectedProductId] = useState(productId);
   const [loading, setLoading] = useState(false);
@@ -40,6 +40,7 @@ function NewOrderForm() {
   const [successOrder, setSuccessOrder] = useState<OrderData | null>(null);
 
   const [showCaptcha, setShowCaptcha] = useState(false);
+  const [pendingGateToken, setPendingGateToken] = useState<string | null>(null);
   const [captchaOverride, setCaptchaOverride] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -55,28 +56,34 @@ function NewOrderForm() {
     if (captchaOverride === false) return { label: "✅ URL 關閉驗證", amber: false };
     if (!config.enabled) return { label: "✅ 系統已關閉", amber: false };
     if (!config.orderCaptcha) return { label: "✅ 下單未啟用", amber: false };
-    if (isWithinCaptchaCooldown(config.cooldownMinutes)) return { label: "✅ 冷卻中", amber: false };
+    if (config.captchaCooldownActive || isWithinCaptchaCooldown(config.cooldownMinutes)) {
+      return { label: "✅ 冷卻中", amber: false };
+    }
     if (config.randomTriggerRate <= 0) return { label: "✅ 機率為 0", amber: false };
     if (config.randomTriggerRate >= 1) return { label: "🔐 將要求驗證", amber: true };
     return { label: "🔐 依機率可能驗證", amber: true };
   }, [config, configLoading, captchaOverride]);
 
-  function handleVerified() {
-    if (typeof window !== "undefined") {
-      const maxAge = config.cooldownMinutes * 60;
-      document.cookie = `${CAPTCHA_COOKIE}=1; path=/; max-age=${maxAge}`;
-      document.cookie = `${CAPTCHA_TIMESTAMP_COOKIE}=${Date.now()}; path=/; max-age=${maxAge}`;
+  async function handleVerified(actionPassToken?: string) {
+    if (!actionPassToken) {
+      setError("驗證失敗：缺少通行憑證");
+      setLoading(false);
+      return;
     }
     setShowCaptcha(false);
-    void submitOrder();
+    setPendingGateToken(null);
+    setLoading(true);
+    await refetch();
+    await submitOrder(actionPassToken);
   }
 
   function handleCancel() {
     setShowCaptcha(false);
+    setPendingGateToken(null);
     setLoading(false);
   }
 
-  async function submitOrder() {
+  async function submitOrder(captchaActionPass: string) {
     const product = products.find((p) => p.id === selectedProductId);
     if (!product) {
       setError("找不到選擇的產品");
@@ -91,6 +98,8 @@ function NewOrderForm() {
         body: JSON.stringify({
           productName: product.name,
           model: product.nameEn,
+          productId: selectedProductId,
+          captchaActionPass,
         }),
       });
 
@@ -127,21 +136,42 @@ function NewOrderForm() {
     setLoading(true);
     setError("");
 
-    const shouldShow =
-      captchaOverride !== null
-        ? captchaOverride
-        : !config.enabled || !config.orderCaptcha
-          ? false
-          : isWithinCaptchaCooldown(config.cooldownMinutes)
-            ? false
-            : Math.random() < config.randomTriggerRate;
-
-    if (shouldShow) {
-      setShowCaptcha(true);
+    try {
+      const gateRes = await fetch(`${BASE_PATH}/api/captcha/action-gate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "order",
+          productId: selectedProductId,
+          captchaOverride,
+        }),
+      });
+      const gateJson = (await gateRes.json()) as {
+        needCaptcha?: boolean;
+        pendingGateToken?: string | null;
+        actionPassToken?: string | null;
+        error?: string;
+      };
+      if (!gateRes.ok) {
+        setError(gateJson.error || "無法取得驗證狀態");
+        return;
+      }
+      if (gateJson.needCaptcha && gateJson.pendingGateToken) {
+        setPendingGateToken(gateJson.pendingGateToken);
+        setShowCaptcha(true);
+        return;
+      }
+      const pass = typeof gateJson.actionPassToken === "string" ? gateJson.actionPassToken : "";
+      if (!pass) {
+        setError("缺少驗證通行憑證，請重試");
+        return;
+      }
+      await submitOrder(pass);
+    } catch {
+      setError("網絡錯誤，請重試");
+    } finally {
       setLoading(false);
-      return;
     }
-    await submitOrder();
   }
 
   if (successOrder) {
@@ -189,9 +219,9 @@ function NewOrderForm() {
               </p>
             </div>
             {config.mode === "slider" ? (
-              <SliderCaptcha onVerified={handleVerified} />
+              <SliderCaptcha onVerified={handleVerified} pendingGateToken={pendingGateToken ?? undefined} />
             ) : (
-              <MathCaptcha onVerified={handleVerified} />
+              <MathCaptcha onVerified={handleVerified} pendingGateToken={pendingGateToken ?? undefined} />
             )}
             <button
               type="button"

@@ -4,8 +4,15 @@ import {
   verifySliderChallengeToken,
   verifySliderHeuristicPayload,
 } from "@/lib/captcha-challenge";
+import {
+  CAPTCHA_COOLDOWN_COOKIE,
+  createCooldownCookieValue,
+  createSolvedPassFromGate,
+  parseAndVerifyGateToken,
+} from "@/lib/captcha-action-proof";
 import type { TrailPoint } from "@/lib/captcha-trajectory";
 import { verifySliderV2Challenge } from "@/lib/captcha-slider-v2-token";
+import { readCaptchaRuntimeConfig } from "@/lib/captcha-runtime-store";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +41,36 @@ interface SliderV2VerifyBody {
 
 type VerifyRequestBody = MathVerifyBody | SliderVerifyBody | SliderV2VerifyBody;
 
+async function successResponseWithOptionalGate(
+  body: Partial<VerifyRequestBody> & { pendingGateToken?: string },
+): Promise<NextResponse> {
+  const pendingRaw = typeof body.pendingGateToken === "string" ? body.pendingGateToken.trim() : "";
+  if (!pendingRaw) {
+    return NextResponse.json({ success: true });
+  }
+  const g = parseAndVerifyGateToken(pendingRaw);
+  if (!g.ok || !g.gate.need) {
+    return NextResponse.json({ success: false, error: "invalid_or_expired_gate" }, { status: 400 });
+  }
+  const actionPassToken = createSolvedPassFromGate(g.gate);
+  const cfg = await readCaptchaRuntimeConfig();
+  const res = NextResponse.json({ success: true, actionPassToken });
+  res.cookies.set(CAPTCHA_COOLDOWN_COOKIE, createCooldownCookieValue(cfg.cooldown_minutes), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: cfg.cooldown_minutes * 60,
+  });
+  return res;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as Partial<VerifyRequestBody> & { captchaType?: string };
+    const body = (await request.json()) as Partial<VerifyRequestBody> & {
+      captchaType?: string;
+      pendingGateToken?: string;
+    };
 
     if (!body.captchaType) {
       return NextResponse.json(
@@ -64,7 +98,7 @@ export async function POST(request: NextRequest) {
       if (!result.ok) {
         return NextResponse.json({ success: false, error: result.error });
       }
-      return NextResponse.json({ success: true });
+      return await successResponseWithOptionalGate(body);
     }
 
     if (body.captchaType === "slider") {
@@ -95,7 +129,7 @@ export async function POST(request: NextRequest) {
       if (!check.ok) {
         return NextResponse.json({ success: false, error: check.error }, { status: 400 });
       }
-      return NextResponse.json({ success: true });
+      return await successResponseWithOptionalGate(body);
     }
 
     if (body.captchaType === "slider_v2") {
@@ -133,7 +167,7 @@ export async function POST(request: NextRequest) {
                 : "驗證失敗";
         return NextResponse.json({ success: false, message, reason });
       }
-      return NextResponse.json({ success: true });
+      return await successResponseWithOptionalGate(body);
     }
 
     return NextResponse.json(

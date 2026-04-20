@@ -13,6 +13,8 @@ export interface CaptchaRuntimePublicConfig {
   randomTriggerRate: number;
   cooldownMinutes: number;
   mode: CaptchaMode;
+  /** True when HttpOnly cooldown cookie is active (server-side). */
+  captchaCooldownActive?: boolean;
 }
 
 /** Must stay aligned with `DEFAULT_RUNTIME_CONFIG` in `src/lib/captcha-runtime-store.ts`. */
