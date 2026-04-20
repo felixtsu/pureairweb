@@ -40,11 +40,8 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
   const [error, setError] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
   const [challenge, setChallenge] = useState<SliderApiData | null>(null);
-  const [layoutScale, setLayoutScale] = useState(1);
 
-  const viewportRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const layoutScaleRef = useRef(1);
+  const stageRef = useRef<HTMLDivElement>(null);
   const grabOffsetRef = useRef(0);
   const trailStartRef = useRef<number | null>(null);
   const draggingRef = useRef(false);
@@ -52,10 +49,6 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
   const sliderXRef = useRef(0);
   const challengeRef = useRef<SliderApiData | null>(null);
   const tokenRef = useRef("");
-
-  useEffect(() => {
-    layoutScaleRef.current = layoutScale;
-  }, [layoutScale]);
 
   const loadChallenge = useCallback(
     async (opts?: { clearError?: boolean }) => {
@@ -99,24 +92,6 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
   const sliderH = challenge?.sliderHeight ?? 1;
   const fixedY = matchHole?.y ?? 0;
   const maxSliderX = Math.max(0, bgW - sliderW);
-
-  /** 根据视口宽度缩放舞台（逻辑坐标仍为 bgW×bgH） */
-  useEffect(() => {
-    const el = viewportRef.current;
-    if (!el || !challenge) return;
-    const measure = () => {
-      const w = el.clientWidth;
-      if (w <= 0) return;
-      const s = Math.min(1, w / bgW);
-      const next = Math.max(0.01, s);
-      layoutScaleRef.current = next;
-      setLayoutScale(next);
-    };
-    measure();
-    const ro = new ResizeObserver(() => measure());
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [bgW, challenge]);
 
   const appendTrailPoint = useCallback(
     (xLeft: number) => {
@@ -176,12 +151,13 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
     }
   }, [loadChallenge, onError, onVerified]);
 
+  /** 将屏幕 X 转为背景逻辑坐标（0…bgW） */
   const clientXToLogicalX = useCallback((clientX: number): number | null => {
-    if (!containerRef.current) return null;
-    const rect = containerRef.current.getBoundingClientRect();
-    const scale = layoutScaleRef.current || 1;
-    return (clientX - rect.left) / scale;
-  }, []);
+    if (!stageRef.current) return null;
+    const rect = stageRef.current.getBoundingClientRect();
+    if (rect.width <= 0) return null;
+    return ((clientX - rect.left) / rect.width) * bgW;
+  }, [bgW]);
 
   const onPointerMove = useCallback(
     (clientX: number) => {
@@ -233,7 +209,7 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
   }, [dragging, onPointerMove, verifyWithRefs]);
 
   const startDrag = (clientX: number) => {
-    if (!containerRef.current || verified || loading) return;
+    if (!stageRef.current || verified || loading) return;
     const localX = clientXToLogicalX(clientX);
     if (localX === null) return;
     grabOffsetRef.current = localX - sliderXRef.current;
@@ -243,8 +219,25 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
     trailRef.current = [];
   };
 
+  const onRailPointerDown = (clientX: number) => {
+    if (verified || loading) return;
+    const localX = clientXToLogicalX(clientX);
+    if (localX === null) return;
+    const next = Math.max(0, Math.min(maxSliderX, localX - sliderW / 2));
+    sliderXRef.current = next;
+    setSliderX(next);
+    grabOffsetRef.current = localX - next;
+    draggingRef.current = true;
+    setDragging(true);
+    trailStartRef.current = null;
+    trailRef.current = [];
+  };
+
   const borderClass =
     theme === "dark" ? "border-slate-600 ring-slate-700" : "border-slate-200 ring-slate-100";
+
+  const railClass =
+    theme === "dark" ? "border-slate-600 bg-slate-800" : "border-slate-200 bg-slate-100";
 
   if (loading && !challenge) {
     return (
@@ -269,61 +262,84 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
     );
   }
 
-  const outerW = bgW * layoutScale;
-  const outerH = bgH * layoutScale;
+  const knobLeftPct = maxSliderX > 0 ? (sliderX / maxSliderX) * 100 : 0;
 
   return (
-    <div className="w-full max-w-full space-y-2">
-      <div ref={viewportRef} className="w-full max-w-full">
-        <div
-          ref={containerRef}
-          className={`relative mx-auto overflow-hidden rounded-xl border shadow-sm ring-1 ${borderClass}`}
-          style={{ width: outerW, height: outerH }}
-        >
-          <div
-            className="absolute left-0 top-0 overflow-hidden"
-            style={{
-              width: bgW,
-              height: bgH,
-              transform: `scale(${layoutScale})`,
-              transformOrigin: "top left",
-            }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={bgImage}
-              alt=""
-              className="pointer-events-none block h-full w-full select-none object-cover"
-              draggable={false}
-            />
+    <div className="w-full max-w-full space-y-3">
+      {/* 用 aspect-ratio + 百分比定位，避免 transform 缩放与父级 overflow 裁掉左侧拼块 */}
+      <div
+        ref={stageRef}
+        className={`relative w-full overflow-hidden rounded-xl border shadow-sm ring-1 ${borderClass}`}
+        style={{ aspectRatio: `${bgW} / ${bgH}` }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={bgImage}
+          alt=""
+          className="pointer-events-none absolute inset-0 z-0 block h-full w-full select-none object-cover"
+          draggable={false}
+        />
 
-            {matchHole && sliderImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={sliderImage}
-                alt=""
-                draggable={false}
-                className="absolute touch-none select-none"
-                style={{
-                  left: sliderX,
-                  top: fixedY,
-                  width: sliderW,
-                  height: sliderH,
-                  touchAction: "none",
-                  cursor: verified ? "default" : dragging ? "grabbing" : "grab",
-                }}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  startDrag(e.clientX);
-                }}
-                onTouchStart={(e) => {
-                  if (e.touches.length > 0) startDrag(e.touches[0]!.clientX);
-                }}
-              />
-            ) : null}
-          </div>
-        </div>
+        {matchHole && sliderImage ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={sliderImage}
+            alt="拖動此拼圖塊對齊缺口"
+            draggable={false}
+            className="absolute z-10 touch-none select-none drop-shadow-md"
+            style={{
+              left: `${(sliderX / bgW) * 100}%`,
+              top: `${(fixedY / bgH) * 100}%`,
+              width: `${(sliderW / bgW) * 100}%`,
+              height: `${(sliderH / bgH) * 100}%`,
+              touchAction: "none",
+              cursor: verified ? "default" : dragging ? "grabbing" : "grab",
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              startDrag(e.clientX);
+            }}
+            onTouchStart={(e) => {
+              if (e.touches.length > 0) startDrag(e.touches[0]!.clientX);
+            }}
+          />
+        ) : null}
       </div>
+
+      {/* 底部滑轨：提示可横向操作；点击轨道可跳到大致位置后再微调 */}
+      {!verified && !loading && challenge && (
+        <div className="space-y-1">
+          <div
+            className={`relative h-10 w-full cursor-pointer rounded-full border ${railClass}`}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              onRailPointerDown(e.clientX);
+            }}
+            onTouchStart={(e) => {
+              if (e.touches.length > 0) onRailPointerDown(e.touches[0]!.clientX);
+            }}
+            role="slider"
+            aria-valuemin={0}
+            aria-valuemax={maxSliderX}
+            aria-valuenow={Math.round(sliderX)}
+            aria-label="滑塊位置"
+          >
+            <div
+              className="pointer-events-none absolute inset-y-1 rounded-full bg-sky-500/25"
+              style={{ width: `calc(${knobLeftPct}% + 1.25rem)`, maxWidth: "100%" }}
+            />
+            <div
+              className="pointer-events-none absolute inset-y-0.5 flex w-10 -translate-x-1/2 items-center justify-center rounded-full border-2 border-sky-600 bg-white shadow-md dark:border-sky-400 dark:bg-slate-900"
+              style={{ left: `${knobLeftPct}%` }}
+            >
+              <span className="text-sky-600 dark:text-sky-300">↔</span>
+            </div>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            拖動<strong className="text-slate-700 dark:text-slate-200">上方拼圖塊</strong>對齊缺口，或拖動下方滑條；對齊後放開即可
+          </p>
+        </div>
+      )}
 
       {error && challenge && (
         <p className="text-sm text-red-600 dark:text-red-400" role="alert">
@@ -332,10 +348,6 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
       )}
 
       {verified && <p className="text-sm text-emerald-600 dark:text-emerald-400">驗證通過</p>}
-
-      {!verified && !loading && challenge && (
-        <p className="text-xs text-slate-500 dark:text-slate-400">拖動拼圖對齊缺口後放開滑鼠或手指</p>
-      )}
     </div>
   );
 }
