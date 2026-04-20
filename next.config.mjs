@@ -19,6 +19,18 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_BASE_PATH: basePath || "",
   },
+  experimental: {
+    serverComponentsExternalPackages: ["@napi-rs/canvas"],
+  },
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals = config.externals || [];
+      if (Array.isArray(config.externals)) {
+        config.externals.push("@napi-rs/canvas");
+      }
+    }
+    return config;
+  },
 };
 
 export default nextConfig;

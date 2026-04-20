@@ -4,6 +4,8 @@ import {
   verifySliderChallengeToken,
   verifySliderHeuristicPayload,
 } from "@/lib/captcha-challenge";
+import type { TrailPoint } from "@/lib/captcha-trajectory";
+import { verifySliderV2Challenge } from "@/lib/captcha-slider-v2-token";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +24,15 @@ interface SliderVerifyBody {
   targetType?: string;
 }
 
-type VerifyRequestBody = MathVerifyBody | SliderVerifyBody;
+interface SliderV2VerifyBody {
+  captchaType: "slider_v2";
+  token: string;
+  userX: number;
+  userY: number;
+  trail: TrailPoint[];
+}
+
+type VerifyRequestBody = MathVerifyBody | SliderVerifyBody | SliderV2VerifyBody;
 
 export async function POST(request: NextRequest) {
   try {
@@ -84,6 +94,44 @@ export async function POST(request: NextRequest) {
       );
       if (!check.ok) {
         return NextResponse.json({ success: false, error: check.error }, { status: 400 });
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    if (body.captchaType === "slider_v2") {
+      const v2 = body as Partial<SliderV2VerifyBody>;
+      if (typeof v2.token !== "string" || !v2.token.trim()) {
+        return NextResponse.json(
+          { success: false, message: "token is required", reason: "token_invalid" },
+          { status: 400 },
+        );
+      }
+      const userX = Number(v2.userX);
+      const userY = Number(v2.userY);
+      if (Number.isNaN(userX) || Number.isNaN(userY)) {
+        return NextResponse.json(
+          { success: false, message: "invalid position", reason: "token_invalid" },
+          { status: 400 },
+        );
+      }
+      const trail = Array.isArray(v2.trail) ? v2.trail : [];
+      const normalizedTrail: TrailPoint[] = trail.map((p) => ({
+        x: Number(p?.x),
+        y: Number(p?.y),
+        t: Number(p?.t),
+      }));
+      const result = verifySliderV2Challenge(v2.token, userX, userY, normalizedTrail);
+      if (!result.ok) {
+        const reason = result.reason;
+        const message =
+          reason === "position_mismatch"
+            ? "位置偏差過大"
+            : reason === "trajectory_suspicious"
+              ? "軌跡異常"
+              : reason === "token_expired"
+                ? "驗證已過期"
+                : "驗證失敗";
+        return NextResponse.json({ success: false, message, reason });
       }
       return NextResponse.json({ success: true });
     }

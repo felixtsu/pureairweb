@@ -1,23 +1,29 @@
 "use client";
 
-import dynamic from "next/dynamic";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BASE_PATH } from "@/lib/base-path";
 
-// @ts-ignore - slider-captcha-js/react has no type declarations
-const SliderCaptchaComponent = dynamic(() => import("slider-captcha-js/react"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex items-center justify-center rounded-xl bg-slate-50 p-8 dark:bg-slate-700/50">
-      <p className="text-sm text-slate-500 dark:text-slate-400">載入驗證元件中…</p>
-    </div>
-  ),
-});
+interface HoleInfo {
+  shape: "polygon";
+  x: number;
+  y: number;
+  polygonPoints: number[];
+  width: number;
+  height: number;
+}
 
-/** 与 `slider-captcha-js` request() 默认底图尺寸及 `POST /api/captcha/slider/issue` 输出一致 */
-const SLIDER_W = 320;
-const SLIDER_H = 160;
+interface SliderApiData {
+  token: string;
+  bgImage: string;
+  sliderImage: string;
+  holeData: HoleInfo[];
+  matchHoleIndex: number;
+  sliderWidth: number;
+  sliderHeight: number;
+  bgWidth: number;
+  bgHeight: number;
+}
 
 interface SliderCaptchaProps {
   onVerified: () => void;
@@ -25,63 +31,274 @@ interface SliderCaptchaProps {
   theme?: "light" | "dark";
 }
 
-/**
- * 服务端出题：`request` 拉取 SVG 底图/拼块 + HMAC token；`onVerify` 将 `x`/`trail` 等 POST 到
- * `/api/captcha/verify` 比对签名中的 `snapDx`（容差与库默认一致）。
- */
+function polygonToClipPath(points: number[]): string {
+  const pairs: string[] = [];
+  for (let i = 0; i < points.length; i += 2) {
+    pairs.push(`${points[i]!}px ${points[i + 1]!}px`);
+  }
+  return `polygon(${pairs.join(", ")})`;
+}
+
 export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCaptchaProps) {
-  const tokenRef = useRef<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [bgImage, setBgImage] = useState("");
+  const [sliderImage, setSliderImage] = useState("");
+  const [token, setToken] = useState("");
+  const [sliderX, setSliderX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [verified, setVerified] = useState(false);
+  const [challenge, setChallenge] = useState<SliderApiData | null>(null);
 
-  const request = useCallback(async () => {
-    const res = await fetch(`${BASE_PATH}/api/captcha/slider/issue`, { method: "POST" });
-    const data = (await res.json()) as {
-      bgUrl?: string;
-      puzzleUrl?: string;
-      token?: string;
-      error?: string;
-    };
-    if (!res.ok || !data.bgUrl || !data.puzzleUrl || !data.token) {
-      throw new Error(data.error || "無法載入滑塊驗證");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const grabOffsetRef = useRef(0);
+  const trailStartRef = useRef<number | null>(null);
+  const draggingRef = useRef(false);
+  const trailRef = useRef<Array<{ x: number; y: number; t: number }>>([]);
+  const sliderXRef = useRef(0);
+  const challengeRef = useRef<SliderApiData | null>(null);
+  const tokenRef = useRef("");
+
+  const loadChallenge = useCallback(
+    async (opts?: { clearError?: boolean }) => {
+      if (opts?.clearError !== false) setError(null);
+      setVerified(false);
+      setSliderX(0);
+      sliderXRef.current = 0;
+      setTrailRefEmpty();
+      trailStartRef.current = null;
+      setLoading(true);
+      try {
+        const res = await fetch(`${BASE_PATH}/api/captcha/slider`, { method: "GET" });
+        const json = (await res.json()) as { success?: boolean; data?: SliderApiData; error?: string };
+        if (!res.ok || !json.success || !json.data) {
+          throw new Error(json.error || "無法載入滑塊驗證");
+        }
+        setChallenge(json.data);
+        challengeRef.current = json.data;
+        setBgImage(json.data.bgImage);
+        setSliderImage(json.data.sliderImage);
+        setToken(json.data.token);
+        tokenRef.current = json.data.token;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "載入失敗";
+        setError(msg);
+        onError?.(e);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [onError],
+  );
+
+  function setTrailRefEmpty() {
+    trailRef.current = [];
+  }
+
+  useEffect(() => {
+    void loadChallenge();
+  }, [loadChallenge]);
+
+  const matchHole = challenge?.holeData[challenge.matchHoleIndex];
+  const bgW = challenge?.bgWidth ?? 480;
+  const bgH = challenge?.bgHeight ?? 320;
+  const sliderW = challenge?.sliderWidth ?? 1;
+  const sliderH = challenge?.sliderHeight ?? 1;
+  const fixedY = matchHole?.y ?? 0;
+  const clipPath = matchHole ? polygonToClipPath(matchHole.polygonPoints) : "none";
+
+  const maxSliderX = Math.max(0, bgW - sliderW);
+
+  const appendTrailPoint = useCallback(
+    (xLeft: number) => {
+      const now = Date.now();
+      if (trailStartRef.current === null) trailStartRef.current = now;
+      const t = now - trailStartRef.current;
+      const cx = xLeft + sliderW / 2;
+      const cy = fixedY + sliderH / 2;
+      trailRef.current = [...trailRef.current, { x: cx, y: cy, t }];
+    },
+    [fixedY, sliderH, sliderW],
+  );
+
+  const verifyWithRefs = useCallback(async () => {
+    const ch = challengeRef.current;
+    const tok = tokenRef.current;
+    if (!ch) return;
+    const hole = ch.holeData[ch.matchHoleIndex];
+    if (!hole) return;
+    const sx = sliderXRef.current;
+    const userX = sx + ch.sliderWidth / 2;
+    const userY = hole.y + ch.sliderHeight / 2;
+    let sendTrail = trailRef.current;
+    if (sendTrail.length < 3) {
+      const now = Date.now();
+      const base = trailStartRef.current ?? now;
+      sendTrail = [
+        { x: userX, y: userY, t: 0 },
+        { x: userX, y: userY, t: Math.min(50, now - base) },
+        { x: userX, y: userY, t: Math.min(100, now - base + 1) },
+      ];
     }
-    tokenRef.current = data.token;
-    return { bgUrl: data.bgUrl, puzzleUrl: data.puzzleUrl };
-  }, []);
-
-  const onVerify = useCallback(
-    async (payload: { x: number; duration: number; trail: [number, number][]; targetType?: string }) => {
+    try {
       const res = await fetch(`${BASE_PATH}/api/captcha/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          captchaType: "slider",
-          token: tokenRef.current,
-          x: payload.x,
-          duration: payload.duration,
-          trail: payload.trail,
-          targetType: payload.targetType,
+          captchaType: "slider_v2",
+          token: tok,
+          userX,
+          userY,
+          trail: sendTrail,
         }),
       });
-      const result = (await res.json()) as { success?: boolean; error?: string };
+      const result = (await res.json()) as { success?: boolean; message?: string; reason?: string };
       if (!res.ok || !result.success) {
-        throw new Error(result.error || "驗證失敗");
+        throw new Error(result.message || "驗證失敗");
       }
+      setVerified(true);
+      onVerified();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "驗證失敗";
+      setError(msg);
+      onError?.(e);
+      await loadChallenge({ clearError: false });
+      setError(msg);
+    }
+  }, [loadChallenge, onError, onVerified]);
+
+  const onPointerMove = useCallback(
+    (clientX: number) => {
+      if (!draggingRef.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      let next = clientX - rect.left - grabOffsetRef.current;
+      if (next < 0) next = 0;
+      if (next > maxSliderX) next = maxSliderX;
+      sliderXRef.current = next;
+      setSliderX(next);
+      appendTrailPoint(next);
     },
-    [],
+    [appendTrailPoint, maxSliderX],
   );
 
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      onPointerMove(e.clientX);
+    };
+    const onMouseUp = () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      setDragging(false);
+      void verifyWithRefs();
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) onPointerMove(e.touches[0]!.clientX);
+    };
+    const onTouchEnd = () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      setDragging(false);
+      void verifyWithRefs();
+    };
+
+    if (dragging) {
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+      document.addEventListener("touchmove", onTouchMove, { passive: true });
+      document.addEventListener("touchend", onTouchEnd);
+    }
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [dragging, onPointerMove, verifyWithRefs]);
+
+  const startDrag = (clientX: number) => {
+    if (!containerRef.current || verified || loading) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    grabOffsetRef.current = clientX - rect.left - sliderXRef.current;
+    draggingRef.current = true;
+    setDragging(true);
+    trailStartRef.current = null;
+    trailRef.current = [];
+  };
+
+  const borderClass =
+    theme === "dark" ? "border-slate-600 ring-slate-700" : "border-slate-200 ring-slate-100";
+
+  if (loading && !challenge) {
+    return (
+      <div className="flex w-full max-w-lg items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-8 dark:border-slate-600 dark:bg-slate-800/50">
+        <p className="text-sm text-slate-500 dark:text-slate-400">載入驗證元件中…</p>
+      </div>
+    );
+  }
+
+  if (error && !challenge) {
+    return (
+      <div className="w-full max-w-lg rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+        {error}
+        <button
+          type="button"
+          className="mt-2 block rounded-lg bg-red-600 px-3 py-1.5 text-white hover:bg-red-700"
+          onClick={() => void loadChallenge()}
+        >
+          重試
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full max-w-sm">
-      <SliderCaptchaComponent
-        // @ts-ignore
-        root={null}
-        width={SLIDER_W}
-        height={SLIDER_H}
-        theme={theme}
-        request={request}
-        onVerify={onVerify}
-        onSuccess={onVerified}
-        onFail={onError}
-      />
+    <div className="w-full max-w-lg space-y-2">
+      <div
+        ref={containerRef}
+        className={`relative overflow-hidden rounded-xl border shadow-sm ring-1 ${borderClass}`}
+        style={{ width: bgW, height: bgH }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={bgImage} alt="" className="pointer-events-none block h-full w-full select-none object-cover" draggable={false} />
+
+        {matchHole && (
+          <div
+            className="absolute touch-none select-none"
+            style={{
+              left: sliderX,
+              top: fixedY,
+              width: sliderW,
+              height: sliderH,
+              clipPath,
+              cursor: verified ? "default" : dragging ? "grabbing" : "grab",
+              backgroundImage: `url(${sliderImage})`,
+              backgroundSize: `${sliderW}px ${sliderH}px`,
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "0 0",
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              startDrag(e.clientX);
+            }}
+            onTouchStart={(e) => {
+              if (e.touches.length > 0) startDrag(e.touches[0]!.clientX);
+            }}
+            role="presentation"
+          />
+        )}
+      </div>
+
+      {error && challenge && (
+        <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+          {error}
+        </p>
+      )}
+
+      {verified && <p className="text-sm text-emerald-600 dark:text-emerald-400">驗證通過</p>}
+
+      {!verified && !loading && challenge && (
+        <p className="text-xs text-slate-500 dark:text-slate-400">拖動拼圖對齊缺口後放開滑鼠或手指</p>
+      )}
     </div>
   );
 }
