@@ -171,11 +171,12 @@ export async function GET() {
     if (!tctx) throw new Error("canvas 2d context unavailable");
     drawBgCover(tctx, img, BG_W, BG_H);
 
+    // 拼块：先把缺口 bbox 对应矩形从完整底图拷到小画布，再按「相对 bbox 左上角」的多边形做 clip。
+    // 勿用 translate(-hole)+drawImage(0,0)：与 polygon 局部坐标不一致，clip 后常整块透明。
     const pieceCanvas2 = createCanvas(sliderW, sliderH);
     const pctx2 = pieceCanvas2.getContext("2d");
     if (!pctx2) throw new Error("canvas 2d context unavailable");
     pctx2.save();
-    pctx2.translate(-matchHole.x, -matchHole.y);
     pctx2.beginPath();
     const mp2 = matchHole.polygonPoints;
     pctx2.moveTo(mp2[0]!, mp2[1]!);
@@ -184,7 +185,7 @@ export async function GET() {
     }
     pctx2.closePath();
     pctx2.clip();
-    pctx2.drawImage(tempCanvas, 0, 0);
+    pctx2.drawImage(tempCanvas, matchHole.x, matchHole.y, sliderW, sliderH, 0, 0, sliderW, sliderH);
     pctx2.restore();
 
     const piecePng = await pieceCanvas2.encode("png");

@@ -70,6 +70,7 @@ export function SliderCaptcha({ onVerified, onError, theme = "light" }: SliderCa
         setBgImage(json.data.bgImage);
         setSliderImage(json.data.sliderImage);
         tokenRef.current = json.data.token;
+        setError(null);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "載入失敗";
         setError(msg);
