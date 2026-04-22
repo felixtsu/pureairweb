@@ -5,10 +5,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BASE_PATH } from "@/lib/base-path";
 
 interface HoleInfo {
-  shape: "polygon";
+  shape: "jigsaw";
   x: number;
   y: number;
-  polygonPoints: number[];
   width: number;
   height: number;
 }

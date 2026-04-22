@@ -13,51 +13,47 @@ const BG_W = 480;
 const BG_H = 320;
 
 interface HoleInfo {
-  shape: "polygon";
+  shape: "jigsaw";
   x: number;
   y: number;
-  polygonPoints: number[];
   width: number;
   height: number;
 }
 
-/** 4–6 顶点不规则多边形（相对 hole 左上角 0,0），含轻微凸起模拟拼图块 */
-function makeDistractorPolygon(): { poly: number[]; width: number; height: number } {
-  const raw = [
-    [0, 0],
-    [56, 0],
-    [62, 22],
-    [58, 42],
-    [28, 48],
-    [0, 36],
-  ];
-  return normalizePolygon(raw);
+type TabDirection = -1 | 1;
+
+interface JigsawShape {
+  width: number;
+  height: number;
+  base: number;
+  knobRadius: number;
+  tabs: {
+    top: TabDirection;
+    right: TabDirection;
+    bottom: TabDirection;
+    left: TabDirection;
+  };
 }
 
-function makeMatchPolygon(): { poly: number[]; width: number; height: number } {
-  const raw = [
-    [0, 10],
-    [18, 0],
-    [56, 4],
-    [60, 38],
-    [32, 50],
-    [0, 44],
-  ];
-  return normalizePolygon(raw);
+function randomTabDirection(): TabDirection {
+  return crypto.randomInt(0, 2) === 0 ? -1 : 1;
 }
 
-function normalizePolygon(verts: number[][]): { poly: number[]; width: number; height: number } {
-  const xs = verts.map((v) => v[0]);
-  const ys = verts.map((v) => v[1]);
-  const minX = Math.min(...xs);
-  const minY = Math.min(...ys);
-  const maxX = Math.max(...xs);
-  const maxY = Math.max(...ys);
-  const poly: number[] = [];
-  for (const [x, y] of verts) {
-    poly.push(x - minX, y - minY);
-  }
-  return { poly, width: maxX - minX, height: maxY - minY };
+function makeJigsawShape(): JigsawShape {
+  const base = 52;
+  const knobRadius = 10;
+  return {
+    width: base + knobRadius * 2,
+    height: base + knobRadius * 2,
+    base,
+    knobRadius,
+    tabs: {
+      top: randomTabDirection(),
+      right: randomTabDirection(),
+      bottom: randomTabDirection(),
+      left: randomTabDirection(),
+    },
+  };
 }
 
 type LoadedImage = Awaited<ReturnType<typeof loadImage>>;
@@ -73,18 +69,41 @@ function drawBgCover(ctx: SKRSContext2D, img: LoadedImage, cw: number, ch: numbe
   ctx.drawImage(img, dx, dy, dw, dh);
 }
 
-function fillPolygonPath(
+function drawJigsawPath(
   ctx: SKRSContext2D,
-  poly: number[],
+  shape: JigsawShape,
   holeX: number,
   holeY: number,
 ): void {
+  const x0 = holeX + shape.knobRadius;
+  const y0 = holeY + shape.knobRadius;
+  const x1 = x0 + shape.base;
+  const y1 = y0 + shape.base;
+  const midX = x0 + shape.base / 2;
+  const midY = y0 + shape.base / 2;
+  const r = shape.knobRadius;
+
   ctx.beginPath();
-  const n = poly.length / 2;
-  ctx.moveTo(holeX + poly[0]!, holeY + poly[1]!);
-  for (let i = 1; i < n; i++) {
-    ctx.lineTo(holeX + poly[i * 2]!, holeY + poly[i * 2 + 1]!);
-  }
+  ctx.moveTo(x0, y0);
+
+  // Top edge
+  ctx.lineTo(midX - r, y0);
+  ctx.arc(midX, y0, r, Math.PI, 0, shape.tabs.top === 1);
+  ctx.lineTo(x1, y0);
+
+  // Right edge
+  ctx.lineTo(x1, midY - r);
+  ctx.arc(x1, midY, r, -Math.PI / 2, Math.PI / 2, shape.tabs.right === -1);
+  ctx.lineTo(x1, y1);
+
+  // Bottom edge
+  ctx.lineTo(midX + r, y1);
+  ctx.arc(midX, y1, r, 0, Math.PI, shape.tabs.bottom === -1);
+  ctx.lineTo(x0, y1);
+
+  // Left edge
+  ctx.lineTo(x0, midY + r);
+  ctx.arc(x0, midY, r, Math.PI / 2, Math.PI * 1.5, shape.tabs.left === -1);
   ctx.closePath();
 }
 
@@ -100,34 +119,37 @@ export async function GET() {
     const buf = fs.readFileSync(bgPath);
     const img = await loadImage(buf);
 
-    const dist = makeDistractorPolygon();
-    const mat = makeMatchPolygon();
+    const distShape = makeJigsawShape();
+    const matchShape = makeJigsawShape();
+    const pieceW = Math.max(distShape.width, matchShape.width);
+    const pieceH = Math.max(distShape.height, matchShape.height);
 
     const margin = 24;
-    const x0 = margin + crypto.randomInt(0, Math.max(1, BG_W - Math.max(dist.width, mat.width) - margin * 2));
-    const y0 = margin + crypto.randomInt(0, Math.max(1, BG_H - Math.max(dist.height, mat.height) - margin * 2));
-    const x1 = Math.min(BG_W - Math.max(dist.width, mat.width) - margin, x0 + 120 + crypto.randomInt(0, 60));
-    const y1 = margin + crypto.randomInt(0, Math.max(1, BG_H - Math.max(dist.height, mat.height) - margin * 2));
+    const x0 = margin + crypto.randomInt(0, Math.max(1, BG_W - pieceW - margin * 2));
+    const y0 = margin + crypto.randomInt(0, Math.max(1, BG_H - pieceH - margin * 2));
+    const x1 = Math.min(BG_W - pieceW - margin, x0 + 120 + crypto.randomInt(0, 60));
+    const y1 = margin + crypto.randomInt(0, Math.max(1, BG_H - pieceH - margin * 2));
 
     const matchHoleIndex = crypto.randomInt(0, 2) as 0 | 1;
 
     const holeMatch: HoleInfo = {
-      shape: "polygon",
+      shape: "jigsaw",
       x: matchHoleIndex === 0 ? x0 : x1,
       y: matchHoleIndex === 0 ? y0 : y1,
-      polygonPoints: mat.poly,
-      width: mat.width,
-      height: mat.height,
+      width: matchShape.width,
+      height: matchShape.height,
     };
     const holeDist: HoleInfo = {
-      shape: "polygon",
+      shape: "jigsaw",
       x: matchHoleIndex === 0 ? x1 : x0,
       y: matchHoleIndex === 0 ? y1 : y0,
-      polygonPoints: dist.poly,
-      width: dist.width,
-      height: dist.height,
+      width: distShape.width,
+      height: distShape.height,
     };
     const holeData: [HoleInfo, HoleInfo] = matchHoleIndex === 0 ? [holeMatch, holeDist] : [holeDist, holeMatch];
+    const shapeData: [JigsawShape, JigsawShape] = matchHoleIndex === 0
+      ? [matchShape, distShape]
+      : [distShape, matchShape];
 
     const matchHole = holeData[matchHoleIndex]!;
     const sliderW = matchHole.width;
@@ -156,12 +178,16 @@ export async function GET() {
     if (!ctx) throw new Error("canvas 2d context unavailable");
     drawBgCover(ctx, img, BG_W, BG_H);
 
-    ctx.globalCompositeOperation = "destination-out";
-    fillPolygonPath(ctx, holeData[0]!.polygonPoints, holeData[0]!.x, holeData[0]!.y);
-    ctx.fill();
-    fillPolygonPath(ctx, holeData[1]!.polygonPoints, holeData[1]!.x, holeData[1]!.y);
-    ctx.fill();
-    ctx.globalCompositeOperation = "source-over";
+    for (let i = 0; i < holeData.length; i++) {
+      const hole = holeData[i]!;
+      const shape = shapeData[i]!;
+      drawJigsawPath(ctx, shape, hole.x, hole.y);
+      ctx.fillStyle = "rgba(255,255,255,0.30)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.95)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
 
     const bgPng = await canvas.encode("png");
     const bgImage = `data:image/png;base64,${bgPng.toString("base64")}`;
@@ -171,22 +197,19 @@ export async function GET() {
     if (!tctx) throw new Error("canvas 2d context unavailable");
     drawBgCover(tctx, img, BG_W, BG_H);
 
-    // 拼块：先把缺口 bbox 对应矩形从完整底图拷到小画布，再按「相对 bbox 左上角」的多边形做 clip。
-    // 勿用 translate(-hole)+drawImage(0,0)：与 polygon 局部坐标不一致，clip 后常整块透明。
+    // 拼块：先把缺口 bbox 对应矩形从完整底图拷到小画布，再按拼图路径做 clip。
     const pieceCanvas2 = createCanvas(sliderW, sliderH);
     const pctx2 = pieceCanvas2.getContext("2d");
     if (!pctx2) throw new Error("canvas 2d context unavailable");
     pctx2.save();
-    pctx2.beginPath();
-    const mp2 = matchHole.polygonPoints;
-    pctx2.moveTo(mp2[0]!, mp2[1]!);
-    for (let i = 1; i < mp2.length / 2; i++) {
-      pctx2.lineTo(mp2[i * 2]!, mp2[i * 2 + 1]!);
-    }
-    pctx2.closePath();
+    drawJigsawPath(pctx2, matchShape, 0, 0);
     pctx2.clip();
     pctx2.drawImage(tempCanvas, matchHole.x, matchHole.y, sliderW, sliderH, 0, 0, sliderW, sliderH);
     pctx2.restore();
+    drawJigsawPath(pctx2, matchShape, 0, 0);
+    pctx2.strokeStyle = "rgba(255,255,255,0.95)";
+    pctx2.lineWidth = 2;
+    pctx2.stroke();
 
     const piecePng = await pieceCanvas2.encode("png");
     const sliderImage = `data:image/png;base64,${piecePng.toString("base64")}`;
